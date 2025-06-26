@@ -139,10 +139,10 @@ fi
 echo -e "${YELLOW}========================================${NC}"
 echo -e "${YELLOW}准备执行以下操作:${NC}"
 echo -e "${BLUE}1. git add .${NC}"
-echo -e "${BLUE}2. git commit -m \"Release v$new_version\"${NC}"
+echo -e "${BLUE}2. git commit -m \"Release $new_version\"${NC}"
 echo -e "${BLUE}3. git push origin main${NC}"
-echo -e "${BLUE}4. git tag v$new_version${NC}"
-echo -e "${BLUE}5. git push origin v$new_version${NC}"
+echo -e "${BLUE}4. git tag $new_version${NC}"
+echo -e "${BLUE}5. git push origin $new_version${NC}"
 echo -e "${BLUE}6. ./gradlew publish${NC}"
 if [ "$current_branch" != "main" ]; then
     echo -e "${BLUE}7. git push origin $current_branch${NC}"
@@ -181,7 +181,7 @@ else
 fi
 
 echo -e "${BLUE}步骤 2/$total_steps: 提交更改...${NC}"
-if git commit -m "Release v$new_version"; then
+if git commit -m "Release $new_version"; then
     echo -e "${GREEN}✓ git commit 完成${NC}"
 else
     echo -e "${RED}✗ git commit 失败${NC}"
@@ -197,7 +197,7 @@ else
 fi
 
 echo -e "${BLUE}步骤 4/$total_steps: 创建标签...${NC}"
-if git tag "v$new_version"; then
+if git tag "$new_version"; then
     echo -e "${GREEN}✓ git tag 完成${NC}"
 else
     echo -e "${RED}✗ git tag 失败${NC}"
@@ -205,7 +205,7 @@ else
 fi
 
 echo -e "${BLUE}步骤 5/$total_steps: 推送标签...${NC}"
-if git push origin "v$new_version"; then
+if git push origin "$new_version"; then
     echo -e "${GREEN}✓ git push origin tag 完成${NC}"
 else
     echo -e "${RED}✗ git push origin tag 失败${NC}"
@@ -241,7 +241,7 @@ rm -f "$BACKUP_FILE"
 # 完成提示
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}🎉 发布完成!${NC}"
-echo -e "${GREEN}版本: v$new_version${NC}"
+echo -e "${GREEN}版本: $new_version${NC}"
 echo -e "${GREEN}当前分支: $current_branch${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
@@ -257,10 +257,10 @@ echo ""
 echo -e "${BLUE}后续自动化流程:${NC}"
 echo -e "${BLUE}1. GitHub Actions 将自动创建 Release${NC}"
 echo -e "${BLUE}2. JitPack 将自动构建包${NC}"
-echo -e "${BLUE}3. 几分钟后可在 https://jitpack.io/#zhuxietong/ky/v$new_version 查看状态${NC}"
+echo -e "${BLUE}3. 几分钟后可在 https://jitpack.io/#zhuxietong/ky/$new_version 查看状态${NC}"
 echo ""
 echo -e "${YELLOW}安装命令:${NC}"
-echo -e "${GREEN}implementation(\"com.github.zhuxietong:ky:v$new_version\")${NC}"
+echo -e "${GREEN}implementation(\"com.github.zhuxietong:ky:$new_version\")${NC}"
 
 # 显示分支状态
 echo ""
