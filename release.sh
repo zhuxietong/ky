@@ -144,9 +144,7 @@ echo -e "${BLUE}3. git push origin main${NC}"
 echo -e "${BLUE}4. git tag $new_version${NC}"
 echo -e "${BLUE}5. git push origin $new_version${NC}"
 echo -e "${BLUE}6. ./gradlew publish${NC}"
-if [ "$current_branch" != "main" ]; then
-    echo -e "${BLUE}7. git push origin $current_branch${NC}"
-fi
+echo -e "${BLUE}7. git push origin $current_branch${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${YELLOW}是否确认提交并发布? (y/n)${NC}"
@@ -164,11 +162,8 @@ case $final_confirm in
         ;;
 esac
 
-# 计算总步骤数
-total_steps=6
-if [ "$current_branch" != "main" ]; then
-    total_steps=7
-fi
+# 总步骤数固定为 7
+total_steps=7
 
 # 执行 Git 操作
 echo -e "${BLUE}步骤 1/$total_steps: 添加文件到暂存区...${NC}"
@@ -223,16 +218,18 @@ else
     # 不退出，因为 Git 操作已经成功
 fi
 
-# 如果当前分支不是 main，推送当前分支
-if [ "$current_branch" != "main" ]; then
-    echo -e "${BLUE}步骤 7/$total_steps: 推送当前分支 ($current_branch)...${NC}"
-    if git push origin "$current_branch"; then
-        echo -e "${GREEN}✓ git push origin $current_branch 完成${NC}"
-    else
-        echo -e "${RED}✗ git push origin $current_branch 失败${NC}"
-        echo -e "${YELLOW}注意: 主要发布流程已完成，但当前分支推送失败${NC}"
-        echo -e "${YELLOW}你可以稍后手动执行: git push origin $current_branch${NC}"
-    fi
+# 推送当前分支（无论是否为 main）
+echo -e "${BLUE}步骤 7/$total_steps: 推送当前分支 ($current_branch)...${NC}"
+if [ "$current_branch" = "main" ]; then
+    echo -e "${YELLOW}当前分支是 main，确保所有更改已同步...${NC}"
+fi
+
+if git push origin "$current_branch"; then
+    echo -e "${GREEN}✓ git push origin $current_branch 完成${NC}"
+else
+    echo -e "${RED}✗ git push origin $current_branch 失败${NC}"
+    echo -e "${YELLOW}注意: 主要发布流程已完成，但当前分支推送失败${NC}"
+    echo -e "${YELLOW}你可以稍后手动执行: git push origin $current_branch${NC}"
 fi
 
 # 清理备份文件
@@ -250,9 +247,7 @@ echo -e "${GREEN}✓ 版本号已更新${NC}"
 echo -e "${GREEN}✓ 代码已提交并推送到 main 分支${NC}"
 echo -e "${GREEN}✓ 标签已创建并推送${NC}"
 echo -e "${GREEN}✓ 本地发布已执行${NC}"
-if [ "$current_branch" != "main" ]; then
-    echo -e "${GREEN}✓ 当前分支 ($current_branch) 已推送${NC}"
-fi
+echo -e "${GREEN}✓ 当前分支 ($current_branch) 已推送${NC}"
 echo ""
 echo -e "${BLUE}后续自动化流程:${NC}"
 echo -e "${BLUE}1. GitHub Actions 将自动创建 Release${NC}"
