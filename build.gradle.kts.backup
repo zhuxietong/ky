@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.zhuxietong"
-version = "1.0.8"
+version = "1.0.9"
 
 repositories {
     mavenCentral()
@@ -22,15 +22,14 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// 修改为 JVM 17
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(11)
 }
 
-// 确保编译目标也是 17
+// 强制指定编译目标为 JVM 11
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
     }
 }
 
@@ -38,13 +37,6 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
-
-            // 添加更多元数据（可选）
-            pom {
-                name.set("Ky HTTP Client")
-                description.set("A Kotlin HTTP client library")
-                url.set("https://github.com/zhuxietong/ky")
-            }
         }
     }
 }
