@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.zhuxietong"
-version = "1.0.10"
+version = "1.0.11"
 
 repositories {
     mavenCentral()
@@ -15,7 +15,7 @@ dependencies {
     testImplementation(kotlin("test"))
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")  // 改为 api
 }
 
 tasks.test {
