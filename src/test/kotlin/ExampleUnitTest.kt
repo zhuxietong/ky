@@ -5,6 +5,7 @@ import com.zhuxietong.ky.KyHook
 import com.zhuxietong.ky.KyRequest
 import com.zhuxietong.ky.KyResponse
 import com.zhuxietong.ky.LoggingHook
+import com.zhuxietong.ky.LoggingPresets
 import com.zhuxietong.ky.RetryHook
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -42,7 +43,7 @@ class ExampleUnitTest {
         // 创建 Ky 实例
         val api = Ky.create(
             baseUrl = "https://jsonplaceholder.typicode.com",
-            hooks = listOf(LoggingHook())
+            hooks = listOf(LoggingPresets.minimal())
         )
 
         try {

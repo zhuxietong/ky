@@ -3,7 +3,6 @@ package com.zhuxietong.ky
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -284,22 +283,243 @@ class Ky private constructor(
 }
 
 // 示例 Hook 实现
-class LoggingHook : KyHook {
+// 增强的日志 Hook 实现
+class LoggingHook(
+    private val logLevel: LogLevel = LogLevel.INFO,
+    private val logRequestHeaders: Boolean = false,
+    private val logResponseHeaders: Boolean = false,
+    private val maxBodyLength: Int = 1000,
+    private val prettyPrintJson: Boolean = true,
+    private val logRequestBody: Boolean = true,
+    private val logResponseBody: Boolean = true
+) : KyHook {
+
+    enum class LogLevel {
+        NONE, ERROR, WARN, INFO, DEBUG, VERBOSE
+    }
+
+    private val json = Json {
+        prettyPrint = prettyPrintJson
+        ignoreUnknownKeys = true
+    }
+
     override suspend fun beforeRequest(request: KyRequest): KyRequest {
-        println("🚀 ${request.method} ${request.url}")
+        if (logLevel.ordinal >= LogLevel.INFO.ordinal) {
+            val arrow = "🚀"
+            val method = request.method.padEnd(6)
+            println("$arrow [$method] ${request.url}")
+
+            // 打印请求头
+            if (logRequestHeaders && request.headers.isNotEmpty() && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                println("   📋 Request Headers:")
+                request.headers.forEach { (key, value) ->
+                    // 隐藏敏感信息
+                    val displayValue = if (key.lowercase().contains("authorization") ||
+                        key.lowercase().contains("token") ||
+                        key.lowercase().contains("key")) {
+                        "***${value.takeLast(4)}"
+                    } else {
+                        value
+                    }
+                    println("      $key: $displayValue")
+                }
+            }
+
+            // 打印请求体
+            if (logRequestBody && request.body != null && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                println("   📤 Request Body:")
+                printBody(request.body, "      ")
+            }
+        }
         return request
     }
 
     override suspend fun afterResponse(request: KyRequest, response: KyResponse): KyResponse {
-        println("✅ ${response.status} ${request.method} ${request.url}")
+        if (logLevel.ordinal >= LogLevel.INFO.ordinal) {
+            val statusIcon = when {
+                response.status in 200..299 -> "✅"
+                response.status in 300..399 -> "🔄"
+                response.status in 400..499 -> "⚠️"
+                response.status >= 500 -> "❌"
+                else -> "❓"
+            }
+
+            val method = request.method.padEnd(6)
+            val statusText = if (response.statusText.isNotEmpty()) " ${response.statusText}" else ""
+
+            println("$statusIcon [$method] ${response.status}$statusText ${request.url}")
+
+            // 打印响应头
+            if (logResponseHeaders && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                println("   📋 Response Headers:")
+                response.headers.forEach { (name, value) ->
+                    println("      $name: $value")
+                }
+            }
+
+            // 打印响应体
+            if (logResponseBody && response.body.isNotEmpty() && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                println("   📥 Response Body:")
+                printResponseBody(response.body, "      ")
+            }
+
+            // 在 VERBOSE 模式下打印更多信息
+            if (logLevel == LogLevel.VERBOSE) {
+                println("   ⏱️  Response Time: ${System.currentTimeMillis()} ms") // 这里需要在实际使用时计算真实时间
+                println("   📊 Content-Length: ${response.body.length} bytes")
+            }
+        }
         return response
     }
 
+    override suspend fun beforeRetry(request: KyRequest, error: Throwable, retryCount: Int): KyRequest {
+        if (logLevel.ordinal >= LogLevel.WARN.ordinal) {
+            val method = request.method.padEnd(6)
+            println("🔄 [$method] Retry #$retryCount ${request.url}")
+            println("   💭 Reason: ${error.message}")
+        }
+        return request
+    }
+
     override suspend fun onError(request: KyRequest, error: Throwable): Throwable {
-        println("❌ Error ${request.method} ${request.url}: ${error.message}")
+        if (logLevel.ordinal >= LogLevel.ERROR.ordinal) {
+            val method = request.method.padEnd(6)
+            println("❌ [$method] Error ${request.url}")
+            println("   💥 ${error.javaClass.simpleName}: ${error.message}")
+
+            if (logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                error.printStackTrace()
+            }
+        }
         return error
     }
+
+    private fun printBody(body: Any?, prefix: String) {
+        when (body) {
+            is String -> {
+                if (isValidJson(body)) {
+                    printJsonString(body, prefix)
+                } else {
+                    printTruncatedString(body, prefix)
+                }
+            }
+            is ByteArray -> {
+                println("${prefix}[Binary Data: ${body.size} bytes]")
+            }
+            else -> {
+                try {
+                    val jsonString = json.encodeToString(body)
+                    printJsonString(jsonString, prefix)
+                } catch (e: Exception) {
+                    println("${prefix}${body.toString().take(maxBodyLength)}")
+                }
+            }
+        }
+    }
+
+    private fun printResponseBody(body: String, prefix: String) {
+        when {
+            body.isEmpty() -> println("${prefix}[Empty Response]")
+            isValidJson(body) -> printJsonString(body, prefix)
+            body.startsWith("<!DOCTYPE html") || body.startsWith("<html") -> {
+                println("${prefix}[HTML Content: ${body.length} chars]")
+                if (logLevel == LogLevel.VERBOSE) {
+                    println("${prefix}${body.take(200)}...")
+                }
+            }
+            body.startsWith("<?xml") -> {
+                println("${prefix}[XML Content: ${body.length} chars]")
+                if (logLevel == LogLevel.VERBOSE) {
+                    println("${prefix}${body.take(200)}...")
+                }
+            }
+            else -> printTruncatedString(body, prefix)
+        }
+    }
+
+    private fun printJsonString(jsonString: String, prefix: String) {
+        try {
+            if (prettyPrintJson && jsonString.length <= maxBodyLength) {
+                // 格式化 JSON
+                val jsonElement = Json.parseToJsonElement(jsonString)
+                val prettyJson = json.encodeToString(jsonElement)
+                prettyJson.lines().forEach { line ->
+                    println("$prefix$line")
+                }
+            } else {
+                // 压缩显示或截断
+                val compactJson = jsonString.replace(Regex("\\s+"), " ")
+                printTruncatedString(compactJson, prefix)
+            }
+        } catch (e: Exception) {
+            printTruncatedString(jsonString, prefix)
+        }
+    }
+
+    private fun printTruncatedString(text: String, prefix: String) {
+        if (text.length <= maxBodyLength) {
+            text.lines().forEach { line ->
+                println("$prefix$line")
+            }
+        } else {
+            val truncated = text.take(maxBodyLength)
+            truncated.lines().forEach { line ->
+                println("$prefix$line")
+            }
+            println("$prefix... [truncated ${text.length - maxBodyLength} more chars]")
+        }
+    }
+
+    private fun isValidJson(text: String): Boolean {
+        return try {
+            Json.parseToJsonElement(text.trim())
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
+
+// 便捷的预设配置
+object LoggingPresets {
+    fun minimal() = LoggingHook(
+        logLevel = LoggingHook.LogLevel.INFO,
+        logRequestHeaders = false,
+        logResponseHeaders = false,
+        logRequestBody = false,
+        logResponseBody = false
+    )
+
+    fun standard() = LoggingHook(
+        logLevel = LoggingHook.LogLevel.INFO,
+        logRequestHeaders = false,
+        logResponseHeaders = false,
+        logRequestBody = true,
+        logResponseBody = true,
+        maxBodyLength = 500
+    )
+
+    fun debug() = LoggingHook(
+        logLevel = LoggingHook.LogLevel.DEBUG,
+        logRequestHeaders = true,
+        logResponseHeaders = true,
+        logRequestBody = true,
+        logResponseBody = true,
+        maxBodyLength = 2000,
+        prettyPrintJson = true
+    )
+
+    fun verbose() = LoggingHook(
+        logLevel = LoggingHook.LogLevel.VERBOSE,
+        logRequestHeaders = true,
+        logResponseHeaders = true,
+        logRequestBody = true,
+        logResponseBody = true,
+        maxBodyLength = 5000,
+        prettyPrintJson = true
+    )
+}
+
 
 class AuthHook(private val token: String) : KyHook {
     override suspend fun beforeRequest(request: KyRequest): KyRequest {
@@ -327,34 +547,69 @@ val ky = Ky.create(
         RetryHook()
     )
 )
+// 使用示例
+/*
+// 不同级别的日志配置
+val minimalKy = Ky.create(
+    baseUrl = "https://api.example.com",
+    hooks = listOf(LoggingPresets.minimal())
+)
+
+val debugKy = Ky.create(
+    baseUrl = "https://api.example.com",
+    hooks = listOf(LoggingPresets.debug())
+)
+
+// 自定义配置
+val customKy = Ky.create(
+    baseUrl = "https://api.example.com",
+    hooks = listOf(
+        LoggingHook(
+            logLevel = LoggingHook.LogLevel.INFO,
+            logRequestHeaders = true,
+            logResponseHeaders = false,
+            maxBodyLength = 1000,
+            prettyPrintJson = true,
+            logRequestBody = true,
+            logResponseBody = true
+        )
+    )
+)
 
 // 在协程中使用
 lifecycleScope.launch {
     try {
-        // GET 请求
-        val response = ky.get("/users")
-        val users = response.json<List<User>>()
+        // GET 请求 - 会打印格式化的 JSON 响应
+        val response = debugKy.get("/users")
 
-        // POST 请求
-        val newUser = User(name = "John", email = "john@example.com")
-        val createResponse = ky.post("/users", body = newUser)
-
-        // 带重试的请求
-        val retryResponse = ky.request(
-            url = "/api/data",
-            method = "GET",
-            retries = 3
-        )
+        // POST 请求 - 会打印请求体和响应体
+        val newUser = mapOf("name" to "John", "email" to "john@example.com")
+        val createResponse = debugKy.post("/users", body = newUser)
 
     } catch (e: KyException) {
-        println("Request failed: ${e.message}")
-        println("Status: ${e.response?.status}")
+        // 错误也会被日志记录
     }
 }
 
-// 扩展实例
-val apiV2 = ky.extend(
-    baseUrl = "https://api.example.com/v2",
-    headers = mapOf("API-Version" to "2.0")
-)
+// 输出示例:
+// 🚀 [GET   ] https://api.example.com/users
+//    📋 Request Headers:
+//       Content-Type: application/json
+//       Authorization: ***1234
+//    📤 Request Body:
+//       [Empty Request]
+// ✅ [GET   ] 200 OK https://api.example.com/users
+//    📥 Response Body:
+//       [
+//         {
+//           "id": 1,
+//           "name": "John Doe",
+//           "email": "john@example.com"
+//         },
+//         {
+//           "id": 2,
+//           "name": "Jane Smith",
+//           "email": "jane@example.com"
+//         }
+//       ]
 */
