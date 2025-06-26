@@ -1,11 +1,12 @@
 plugins {
     kotlin("jvm") version "2.1.10"
-    kotlin("plugin.serialization") version "2.1.10"  // 版本要一致
-
+    kotlin("plugin.serialization") version "2.1.10"
+    `maven-publish` // 正确的插件名称
 }
 
+
 group = "com.zhuxietong"
-version = "1.0-SNAPSHOT"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -21,17 +22,38 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
 kotlin {
     jvmToolchain(22)
 }
 
-allprojects {
+// 现在可以使用 publishing 配置块了
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+
+            artifact(tasks.register<Jar>("sourcesJar") {
+                archiveClassifier.set("sources")
+                from(sourceSets.main.get().allSource)
+            })
+        }
+    }
+
     repositories {
+        // 先发布到本地测试
         maven {
+            name = "local"
+            url = uri(layout.buildDirectory.dir("repo"))
+        }
+
+        // GitHub Packages 配置
+        maven {
+            name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/zhuxietong/ky")
             credentials {
-                username = "zhuxietong" // 你的GitHub用户名
-                password = "你的GitHub Token" // 需要有read:packages权限
+                username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_USERNAME")
+                password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
             }
         }
     }
