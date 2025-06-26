@@ -1,12 +1,11 @@
 plugins {
     kotlin("jvm") version "2.1.10"
     kotlin("plugin.serialization") version "2.1.10"
-    `maven-publish` // 正确的插件名称
+    `maven-publish`
 }
 
-
 group = "com.zhuxietong"
-version = "1.0.7"
+version = "1.0.8"
 
 repositories {
     mavenCentral()
@@ -23,15 +22,29 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// 修改为 JVM 17
 kotlin {
-    jvmToolchain(22)
+    jvmToolchain(17)
 }
 
-/// JitPack 只需要基本的 publishing 配置
+// 确保编译目标也是 17
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
+
+            // 添加更多元数据（可选）
+            pom {
+                name.set("Ky HTTP Client")
+                description.set("A Kotlin HTTP client library")
+                url.set("https://github.com/zhuxietong/ky")
+            }
         }
     }
 }
