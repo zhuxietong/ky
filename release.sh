@@ -23,6 +23,15 @@ if [ ! -f "./gradlew" ]; then
     exit 1
 fi
 
+# 获取当前分支名
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [ -z "$current_branch" ]; then
+    echo -e "${RED}错误: 无法获取当前分支名${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}当前分支: $current_branch${NC}"
+
 # 提取当前版本号
 echo -e "${BLUE}正在提取当前版本号...${NC}"
 current_version=$(grep -E '^version = ".*"' "$BUILD_FILE" | sed -E 's/version = "(.*)"/\1/')
@@ -135,6 +144,9 @@ echo -e "${BLUE}3. git push origin main${NC}"
 echo -e "${BLUE}4. git tag v$new_version${NC}"
 echo -e "${BLUE}5. git push origin v$new_version${NC}"
 echo -e "${BLUE}6. ./gradlew publish${NC}"
+if [ "$current_branch" != "main" ]; then
+    echo -e "${BLUE}7. git push origin $current_branch${NC}"
+fi
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${YELLOW}是否确认提交并发布? (y/n)${NC}"
@@ -152,8 +164,14 @@ case $final_confirm in
         ;;
 esac
 
+# 计算总步骤数
+total_steps=6
+if [ "$current_branch" != "main" ]; then
+    total_steps=7
+fi
+
 # 执行 Git 操作
-echo -e "${BLUE}步骤 1/6: 添加文件到暂存区...${NC}"
+echo -e "${BLUE}步骤 1/$total_steps: 添加文件到暂存区...${NC}"
 if git add .; then
     echo -e "${GREEN}✓ git add 完成${NC}"
 else
@@ -162,7 +180,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 2/6: 提交更改...${NC}"
+echo -e "${BLUE}步骤 2/$total_steps: 提交更改...${NC}"
 if git commit -m "Release v$new_version"; then
     echo -e "${GREEN}✓ git commit 完成${NC}"
 else
@@ -170,7 +188,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 3/6: 推送到远程仓库...${NC}"
+echo -e "${BLUE}步骤 3/$total_steps: 推送到远程仓库 main 分支...${NC}"
 if git push origin main; then
     echo -e "${GREEN}✓ git push origin main 完成${NC}"
 else
@@ -178,7 +196,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 4/6: 创建标签...${NC}"
+echo -e "${BLUE}步骤 4/$total_steps: 创建标签...${NC}"
 if git tag "v$new_version"; then
     echo -e "${GREEN}✓ git tag 完成${NC}"
 else
@@ -186,7 +204,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 5/6: 推送标签...${NC}"
+echo -e "${BLUE}步骤 5/$total_steps: 推送标签...${NC}"
 if git push origin "v$new_version"; then
     echo -e "${GREEN}✓ git push origin tag 完成${NC}"
 else
@@ -194,7 +212,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 6/6: 本地发布...${NC}"
+echo -e "${BLUE}步骤 6/$total_steps: 本地发布...${NC}"
 echo -e "${YELLOW}正在执行 ./gradlew publish...${NC}"
 if ./gradlew publish; then
     echo -e "${GREEN}✓ ./gradlew publish 完成${NC}"
@@ -205,6 +223,18 @@ else
     # 不退出，因为 Git 操作已经成功
 fi
 
+# 如果当前分支不是 main，推送当前分支
+if [ "$current_branch" != "main" ]; then
+    echo -e "${BLUE}步骤 7/$total_steps: 推送当前分支 ($current_branch)...${NC}"
+    if git push origin "$current_branch"; then
+        echo -e "${GREEN}✓ git push origin $current_branch 完成${NC}"
+    else
+        echo -e "${RED}✗ git push origin $current_branch 失败${NC}"
+        echo -e "${YELLOW}注意: 主要发布流程已完成，但当前分支推送失败${NC}"
+        echo -e "${YELLOW}你可以稍后手动执行: git push origin $current_branch${NC}"
+    fi
+fi
+
 # 清理备份文件
 rm -f "$BACKUP_FILE"
 
@@ -212,13 +242,17 @@ rm -f "$BACKUP_FILE"
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}🎉 发布完成!${NC}"
 echo -e "${GREEN}版本: v$new_version${NC}"
+echo -e "${GREEN}当前分支: $current_branch${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${BLUE}已完成的操作:${NC}"
 echo -e "${GREEN}✓ 版本号已更新${NC}"
-echo -e "${GREEN}✓ 代码已提交并推送${NC}"
+echo -e "${GREEN}✓ 代码已提交并推送到 main 分支${NC}"
 echo -e "${GREEN}✓ 标签已创建并推送${NC}"
 echo -e "${GREEN}✓ 本地发布已执行${NC}"
+if [ "$current_branch" != "main" ]; then
+    echo -e "${GREEN}✓ 当前分支 ($current_branch) 已推送${NC}"
+fi
 echo ""
 echo -e "${BLUE}后续自动化流程:${NC}"
 echo -e "${BLUE}1. GitHub Actions 将自动创建 Release${NC}"
@@ -227,3 +261,13 @@ echo -e "${BLUE}3. 几分钟后可在 https://jitpack.io/#zhuxietong/ky/v$new_ve
 echo ""
 echo -e "${YELLOW}安装命令:${NC}"
 echo -e "${GREEN}implementation(\"com.github.zhuxietong:ky:v$new_version\")${NC}"
+
+# 显示分支状态
+echo ""
+echo -e "${BLUE}分支状态:${NC}"
+if [ "$current_branch" = "main" ]; then
+    echo -e "${GREEN}当前在 main 分支，所有更改已同步${NC}"
+else
+    echo -e "${YELLOW}当前在 $current_branch 分支${NC}"
+    echo -e "${GREEN}main 分支和 $current_branch 分支都已更新${NC}"
+fi
