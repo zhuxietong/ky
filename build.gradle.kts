@@ -27,34 +27,11 @@ kotlin {
     jvmToolchain(22)
 }
 
-// 现在可以使用 publishing 配置块了
+/// JitPack 只需要基本的 publishing 配置
 publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
-
-            artifact(tasks.register<Jar>("sourcesJar") {
-                archiveClassifier.set("sources")
-                from(sourceSets.main.get().allSource)
-            })
-        }
-    }
-
-    repositories {
-        // 先发布到本地测试
-        maven {
-            name = "local"
-            url = uri(layout.buildDirectory.dir("repo"))
-        }
-
-        // GitHub Packages 配置
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/zhuxietong/ky")
-            credentials {
-                username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_USERNAME")
-                password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
-            }
         }
     }
 }
