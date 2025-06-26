@@ -17,6 +17,12 @@ if [ ! -f "$BUILD_FILE" ]; then
     exit 1
 fi
 
+# 检查 gradlew 是否存在
+if [ ! -f "./gradlew" ]; then
+    echo -e "${RED}错误: gradlew 文件不存在${NC}"
+    exit 1
+fi
+
 # 提取当前版本号
 echo -e "${BLUE}正在提取当前版本号...${NC}"
 current_version=$(grep -E '^version = ".*"' "$BUILD_FILE" | sed -E 's/version = "(.*)"/\1/')
@@ -128,6 +134,7 @@ echo -e "${BLUE}2. git commit -m \"Release v$new_version\"${NC}"
 echo -e "${BLUE}3. git push origin main${NC}"
 echo -e "${BLUE}4. git tag v$new_version${NC}"
 echo -e "${BLUE}5. git push origin v$new_version${NC}"
+echo -e "${BLUE}6. ./gradlew publish${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${YELLOW}是否确认提交并发布? (y/n)${NC}"
@@ -146,7 +153,7 @@ case $final_confirm in
 esac
 
 # 执行 Git 操作
-echo -e "${BLUE}步骤 1/5: 添加文件到暂存区...${NC}"
+echo -e "${BLUE}步骤 1/6: 添加文件到暂存区...${NC}"
 if git add .; then
     echo -e "${GREEN}✓ git add 完成${NC}"
 else
@@ -155,7 +162,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 2/5: 提交更改...${NC}"
+echo -e "${BLUE}步骤 2/6: 提交更改...${NC}"
 if git commit -m "Release v$new_version"; then
     echo -e "${GREEN}✓ git commit 完成${NC}"
 else
@@ -163,7 +170,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 3/5: 推送到远程仓库...${NC}"
+echo -e "${BLUE}步骤 3/6: 推送到远程仓库...${NC}"
 if git push origin main; then
     echo -e "${GREEN}✓ git push origin main 完成${NC}"
 else
@@ -171,7 +178,7 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 4/5: 创建标签...${NC}"
+echo -e "${BLUE}步骤 4/6: 创建标签...${NC}"
 if git tag "v$new_version"; then
     echo -e "${GREEN}✓ git tag 完成${NC}"
 else
@@ -179,12 +186,23 @@ else
     exit 1
 fi
 
-echo -e "${BLUE}步骤 5/5: 推送标签...${NC}"
+echo -e "${BLUE}步骤 5/6: 推送标签...${NC}"
 if git push origin "v$new_version"; then
     echo -e "${GREEN}✓ git push origin tag 完成${NC}"
 else
     echo -e "${RED}✗ git push origin tag 失败${NC}"
     exit 1
+fi
+
+echo -e "${BLUE}步骤 6/6: 本地发布...${NC}"
+echo -e "${YELLOW}正在执行 ./gradlew publish...${NC}"
+if ./gradlew publish; then
+    echo -e "${GREEN}✓ ./gradlew publish 完成${NC}"
+else
+    echo -e "${RED}✗ ./gradlew publish 失败${NC}"
+    echo -e "${YELLOW}注意: Git 操作已完成，但本地发布失败${NC}"
+    echo -e "${YELLOW}你可以稍后手动执行: ./gradlew publish${NC}"
+    # 不退出，因为 Git 操作已经成功
 fi
 
 # 清理备份文件
@@ -196,7 +214,13 @@ echo -e "${GREEN}🎉 发布完成!${NC}"
 echo -e "${GREEN}版本: v$new_version${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${BLUE}后续步骤:${NC}"
+echo -e "${BLUE}已完成的操作:${NC}"
+echo -e "${GREEN}✓ 版本号已更新${NC}"
+echo -e "${GREEN}✓ 代码已提交并推送${NC}"
+echo -e "${GREEN}✓ 标签已创建并推送${NC}"
+echo -e "${GREEN}✓ 本地发布已执行${NC}"
+echo ""
+echo -e "${BLUE}后续自动化流程:${NC}"
 echo -e "${BLUE}1. GitHub Actions 将自动创建 Release${NC}"
 echo -e "${BLUE}2. JitPack 将自动构建包${NC}"
 echo -e "${BLUE}3. 几分钟后可在 https://jitpack.io/#zhuxietong/ky/v$new_version 查看状态${NC}"
