@@ -7,7 +7,11 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+
+// 查询参数类型定义
+typealias SearchParams = Map<String, Any?>
 
 // 请求/响应数据类
 data class KyRequest(
@@ -15,6 +19,7 @@ data class KyRequest(
     val method: String = "GET",
     val headers: MutableMap<String, String> = mutableMapOf(),
     val body: Any? = null,
+    val searchParams: SearchParams = emptyMap(),
     val timeout: Long = 30000,
     val retries: Int = 0
 )
@@ -50,11 +55,103 @@ class KyException(
     cause: Throwable? = null
 ) : Exception(message, cause)
 
+// 查询参数构建器
+object SearchParamsBuilder {
+
+    /**
+     * 将查询参数映射转换为 URL 查询字符串
+     */
+    fun buildQueryString(params: SearchParams): String {
+        if (params.isEmpty()) return ""
+
+        return params.entries
+            .filter { it.value != null }
+            .joinToString("&") { (key, value) ->
+                when (value) {
+                    is List<*> -> {
+                        // 处理数组参数，如 tags=[tag1,tag2] 或 tags=tag1&tags=tag2
+                        value.filterNotNull().joinToString("&") { item ->
+                            "${urlEncode(key)}=${urlEncode(item.toString())}"
+                        }
+                    }
+                    is Array<*> -> {
+                        // 处理数组参数
+                        value.filterNotNull().joinToString("&") { item ->
+                            "${urlEncode(key)}=${urlEncode(item.toString())}"
+                        }
+                    }
+                    is Boolean -> "${urlEncode(key)}=${value}"
+                    is Number -> "${urlEncode(key)}=${value}"
+                    else -> "${urlEncode(key)}=${urlEncode(value.toString())}"
+                }
+            }
+    }
+
+    /**
+     * 将查询参数添加到 URL 中
+     */
+    fun appendToUrl(baseUrl: String, params: SearchParams): String {
+        if (params.isEmpty()) return baseUrl
+
+        val queryString = buildQueryString(params)
+        if (queryString.isEmpty()) return baseUrl
+
+        val separator = if (baseUrl.contains("?")) "&" else "?"
+        return "$baseUrl$separator$queryString"
+    }
+
+    /**
+     * URL 编码
+     */
+    private fun urlEncode(value: String): String {
+        return URLEncoder.encode(value, "UTF-8")
+    }
+
+    /**
+     * 合并多个查询参数映射
+     */
+    fun merge(vararg paramMaps: SearchParams): SearchParams {
+        val result = mutableMapOf<String, Any?>()
+        paramMaps.forEach { params ->
+            result.putAll(params)
+        }
+        return result
+    }
+
+    /**
+     * 从字符串构建查询参数
+     */
+    fun fromString(queryString: String): SearchParams {
+        if (queryString.isBlank()) return emptyMap()
+
+        val params = mutableMapOf<String, Any?>()
+        val cleanQuery = queryString.removePrefix("?")
+
+        cleanQuery.split("&").forEach { pair ->
+            val parts = pair.split("=", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0]
+                val value = parts[1]
+
+                // 处理重复的键（转换为列表）
+                when (val existing = params[key]) {
+                    null -> params[key] = value
+                    is List<*> -> params[key] = existing + value
+                    else -> params[key] = listOf(existing, value)
+                }
+            }
+        }
+
+        return params
+    }
+}
+
 // 主要的 Ky 类
 class Ky private constructor(
     private val client: OkHttpClient,
     private val baseUrl: String = "",
     private val defaultHeaders: Map<String, String> = emptyMap(),
+    private val defaultSearchParams: SearchParams = emptyMap(),
     private val hooks: List<KyHook> = emptyList(),
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
@@ -64,6 +161,7 @@ class Ky private constructor(
             baseUrl: String = "",
             timeout: Long = 30000,
             headers: Map<String, String> = emptyMap(),
+            searchParams: SearchParams = emptyMap(),
             hooks: List<KyHook> = emptyList()
         ): Ky {
             val client = OkHttpClient.Builder()
@@ -76,6 +174,7 @@ class Ky private constructor(
                 client = client,
                 baseUrl = baseUrl,
                 defaultHeaders = headers,
+                defaultSearchParams = searchParams,
                 hooks = hooks
             )
         }
@@ -85,6 +184,7 @@ class Ky private constructor(
     fun extend(
         baseUrl: String = this.baseUrl,
         headers: Map<String, String> = this.defaultHeaders,
+        searchParams: SearchParams = this.defaultSearchParams,
         hooks: List<KyHook> = this.hooks,
         timeout: Long? = null
     ): Ky {
@@ -102,6 +202,7 @@ class Ky private constructor(
             client = newClient,
             baseUrl = baseUrl,
             defaultHeaders = headers,
+            defaultSearchParams = searchParams,
             hooks = hooks,
             json = json
         )
@@ -113,17 +214,23 @@ class Ky private constructor(
         method: String = "GET",
         headers: Map<String, String> = emptyMap(),
         body: Any? = null,
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null,
         retries: Int = 0
     ): KyResponse = withContext(Dispatchers.IO) {
-        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
+        val baseFullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
         val mergedHeaders = defaultHeaders + headers
+        val mergedSearchParams = SearchParamsBuilder.merge(defaultSearchParams, searchParams)
+
+        // 构建完整的 URL（包含查询参数）
+        val fullUrl = SearchParamsBuilder.appendToUrl(baseFullUrl, mergedSearchParams)
 
         var request = KyRequest(
             url = fullUrl,
             method = method.uppercase(),
             headers = mergedHeaders.toMutableMap(),
             body = body,
+            searchParams = mergedSearchParams,
             timeout = timeout ?: 30000,
             retries = retries
         )
@@ -251,43 +358,48 @@ class Ky private constructor(
     suspend fun get(
         url: String,
         headers: Map<String, String> = emptyMap(),
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null
-    ) = request(url, "GET", headers, timeout = timeout)
+    ) = request(url, "GET", headers, searchParams = searchParams, timeout = timeout)
 
     suspend fun post(
         url: String,
         body: Any? = null,
         headers: Map<String, String> = emptyMap(),
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null
-    ) = request(url, "POST", headers, body, timeout)
+    ) = request(url, "POST", headers, body, searchParams, timeout)
 
     suspend fun put(
         url: String,
         body: Any? = null,
         headers: Map<String, String> = emptyMap(),
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null
-    ) = request(url, "PUT", headers, body, timeout)
+    ) = request(url, "PUT", headers, body, searchParams, timeout)
 
     suspend fun delete(
         url: String,
         headers: Map<String, String> = emptyMap(),
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null
-    ) = request(url, "DELETE", headers, timeout = timeout)
+    ) = request(url, "DELETE", headers, searchParams = searchParams, timeout = timeout)
 
     suspend fun patch(
         url: String,
         body: Any? = null,
         headers: Map<String, String> = emptyMap(),
+        searchParams: SearchParams = emptyMap(),
         timeout: Long? = null
-    ) = request(url, "PATCH", headers, body, timeout)
+    ) = request(url, "PATCH", headers, body, searchParams, timeout)
 }
 
-// 示例 Hook 实现
-// 增强的日志 Hook 实现
+// 增强的日志 Hook 实现（更新以支持 searchParams）
 class LoggingHook(
     private val logLevel: LogLevel = LogLevel.INFO,
     private val logRequestHeaders: Boolean = false,
     private val logResponseHeaders: Boolean = false,
+    private val logSearchParams: Boolean = true,
     private val maxBodyLength: Int = 1000,
     private val prettyPrintJson: Boolean = true,
     private val logRequestBody: Boolean = true,
@@ -308,6 +420,24 @@ class LoggingHook(
             val arrow = "🚀"
             val method = request.method.padEnd(6)
             println("$arrow [$method] ${request.url}")
+
+            // 打印查询参数
+            if (logSearchParams && request.searchParams.isNotEmpty() && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
+                println("   🔍 Search Params:")
+                request.searchParams.forEach { (key, value) ->
+                    when (value) {
+                        is List<*> -> {
+                            println("      $key: [${value.joinToString(", ")}]")
+                        }
+                        is Array<*> -> {
+                            println("      $key: [${value.joinToString(", ")}]")
+                        }
+                        else -> {
+                            println("      $key: $value")
+                        }
+                    }
+                }
+            }
 
             // 打印请求头
             if (logRequestHeaders && request.headers.isNotEmpty() && logLevel.ordinal >= LogLevel.DEBUG.ordinal) {
@@ -365,7 +495,7 @@ class LoggingHook(
 
             // 在 VERBOSE 模式下打印更多信息
             if (logLevel == LogLevel.VERBOSE) {
-                println("   ⏱️  Response Time: ${System.currentTimeMillis()} ms") // 这里需要在实际使用时计算真实时间
+                println("   ⏱️  Response Time: ${System.currentTimeMillis()} ms")
                 println("   📊 Content-Length: ${response.body.length} bytes")
             }
         }
@@ -486,6 +616,7 @@ object LoggingPresets {
         logLevel = LoggingHook.LogLevel.INFO,
         logRequestHeaders = false,
         logResponseHeaders = false,
+        logSearchParams = false,
         logRequestBody = false,
         logResponseBody = false
     )
@@ -494,6 +625,7 @@ object LoggingPresets {
         logLevel = LoggingHook.LogLevel.INFO,
         logRequestHeaders = false,
         logResponseHeaders = false,
+        logSearchParams = true,
         logRequestBody = true,
         logResponseBody = true,
         maxBodyLength = 500
@@ -503,6 +635,7 @@ object LoggingPresets {
         logLevel = LoggingHook.LogLevel.DEBUG,
         logRequestHeaders = true,
         logResponseHeaders = true,
+        logSearchParams = true,
         logRequestBody = true,
         logResponseBody = true,
         maxBodyLength = 2000,
@@ -513,13 +646,13 @@ object LoggingPresets {
         logLevel = LoggingHook.LogLevel.VERBOSE,
         logRequestHeaders = true,
         logResponseHeaders = true,
+        logSearchParams = true,
         logRequestBody = true,
         logResponseBody = true,
         maxBodyLength = 5000,
         prettyPrintJson = true
     )
 }
-
 
 class AuthHook(private val token: String) : KyHook {
     override suspend fun beforeRequest(request: KyRequest): KyRequest {
@@ -534,82 +667,3 @@ class RetryHook : KyHook {
         return request
     }
 }
-
-// 使用示例
-/*
-// 基本使用
-val ky = Ky.create(
-    baseUrl = "https://api.example.com",
-    headers = mapOf("Content-Type" to "application/json"),
-    hooks = listOf(
-        LoggingHook(),
-        AuthHook("your-token-here"),
-        RetryHook()
-    )
-)
-// 使用示例
-/*
-// 不同级别的日志配置
-val minimalKy = Ky.create(
-    baseUrl = "https://api.example.com",
-    hooks = listOf(LoggingPresets.minimal())
-)
-
-val debugKy = Ky.create(
-    baseUrl = "https://api.example.com",
-    hooks = listOf(LoggingPresets.debug())
-)
-
-// 自定义配置
-val customKy = Ky.create(
-    baseUrl = "https://api.example.com",
-    hooks = listOf(
-        LoggingHook(
-            logLevel = LoggingHook.LogLevel.INFO,
-            logRequestHeaders = true,
-            logResponseHeaders = false,
-            maxBodyLength = 1000,
-            prettyPrintJson = true,
-            logRequestBody = true,
-            logResponseBody = true
-        )
-    )
-)
-
-// 在协程中使用
-lifecycleScope.launch {
-    try {
-        // GET 请求 - 会打印格式化的 JSON 响应
-        val response = debugKy.get("/users")
-
-        // POST 请求 - 会打印请求体和响应体
-        val newUser = mapOf("name" to "John", "email" to "john@example.com")
-        val createResponse = debugKy.post("/users", body = newUser)
-
-    } catch (e: KyException) {
-        // 错误也会被日志记录
-    }
-}
-
-// 输出示例:
-// 🚀 [GET   ] https://api.example.com/users
-//    📋 Request Headers:
-//       Content-Type: application/json
-//       Authorization: ***1234
-//    📤 Request Body:
-//       [Empty Request]
-// ✅ [GET   ] 200 OK https://api.example.com/users
-//    📥 Response Body:
-//       [
-//         {
-//           "id": 1,
-//           "name": "John Doe",
-//           "email": "john@example.com"
-//         },
-//         {
-//           "id": 2,
-//           "name": "Jane Smith",
-//           "email": "jane@example.com"
-//         }
-//       ]
-*/
